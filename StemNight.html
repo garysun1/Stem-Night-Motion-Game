@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Motion-Controlled Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/addons/p5.sound.min.js"></script>
+    <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      canvas { display: block; }
+      .p5Button { font-size: 18px; padding: 8px 16px; }
+    </style>
+  </head>
+  <body>
+    <script>
+      let video;
+      let poseNet;
+      let noseX = 0, noseY = 0;
+      let score = 0;
+      const goal = 10;
+      let gameOver = false;
+      let stars = [];
+      let collectSound, winSound;
+      let restartButton;
+      let startTime = 0;
+      let elapsedTime = 0;
+      let bestTime = Infinity;
+
+      function setup() {
+        createCanvas(windowWidth, windowHeight);
+        video = createCapture(VIDEO);
+        video.size(windowWidth, windowHeight);
+        video.hide();
+
+        // Audio setup
+        collectSound = new p5.Oscillator('sine');
+        collectSound.start();
+        collectSound.amp(0);
+        winSound = new p5.Oscillator('square');
+        winSound.start();
+        winSound.amp(0);
+
+        // Restart button always visible
+        restartButton = createButton('Restart');
+        restartButton.addClass('p5Button');
+        restartButton.style('position', 'absolute');
+        restartButton.style('top', '20px');
+        restartButton.style('right', '20px');
+        restartButton.mousePressed(resetGame);
+
+        // Initialize PoseNet
+        poseNet = ml5.poseNet(video, modelReady);
+        poseNet.on('pose', gotPoses);
+
+        // Create stars
+        for (let i = 0; i < 5; i++) stars.push(new Star());
+
+        // Start timer
+        resetTimer();
+      }
+
+      function windowResized() {
+        resizeCanvas(windowWidth, windowHeight);
+        video.size(windowWidth, windowHeight);
+      }
+
+      function modelReady() {
+        console.log('PoseNet ready!');
+      }
+
+      function gotPoses(poses) {
+        if (poses.length && poses[0].pose.nose) {
+          noseX = poses[0].pose.nose.x;
+          noseY = poses[0].pose.nose.y;
+        }
+      }
+
+      function draw() {
+        // Mirror video
+        push();
+        translate(width, 0);
+        scale(-1, 1);
+        image(video, 0, 0, width, height);
+        pop();
+
+        // Timer
+        if (!gameOver) elapsedTime = (millis() - startTime) / 1000;
+
+        // Compute display position (mirrored)
+        const displayX = width - noseX;
+        const displayY = noseY;
+
+        if (!gameOver) {
+          // Draw player
+          fill(0, 255, 255);
+          noStroke();
+          ellipse(displayX, displayY, 30);
+
+          // Draw stars and handle collection
+          fill(255, 255, 0);
+          for (let i = stars.length - 1; i >= 0; i--) {
+            stars[i].update();
+            stars[i].display();
+            if (dist(displayX, displayY, stars[i].x, stars[i].y) < 20) {
+              // Play collect sound
+              collectSound.freq(random(400, 800));
+              collectSound.amp(0.5, 0.05);
+              collectSound.amp(0, 0.2);
+              stars.splice(i, 1);
+              stars.push(new Star());
+              score++;
+            }
+          }
+
+          // Display score, timer, best time
+          fill(255);
+          textSize(24);
+          textAlign(LEFT, TOP);
+          text(`Score: ${score} / ${goal}`, 20, 20);
+          text(`Time: ${nf(elapsedTime, 1, 2)}s`, 20, 50);
+          if (bestTime < Infinity) text(`Best: ${nf(bestTime,1,2)}s`, 20, 80);
+
+          // Check win
+          if (score >= goal) {
+            gameOver = true;
+            // Update best time
+            if (elapsedTime < bestTime) bestTime = elapsedTime;
+            // Play win sound
+            winSound.freq(300);
+            winSound.amp(0.5, 0.1);
+            winSound.amp(0, 1);
+          }
+        } else {
+          // Win screen
+          background(0, 150);
+          fill(0, 255, 0);
+          textSize(64);
+          textAlign(CENTER, CENTER);
+          text('You Win!', width / 2, height / 2 - 40);
+          fill(255);
+          textSize(32);
+          text(`Time: ${nf(elapsedTime,1,2)}s`, width / 2, height / 2 + 20);
+          text(`Best: ${nf(bestTime,1,2)}s`, width / 2, height / 2 + 60);
+        }
+      }
+
+      function resetGame() {
+        score = 0;
+        gameOver = false;
+        stars = [];
+        for (let i = 0; i < 5; i++) stars.push(new Star());
+        resetTimer();
+      }
+
+      function resetTimer() {
+        startTime = millis();
+        elapsedTime = 0;
+      }
+
+      class Star {
+        constructor() {
+          this.x = random(width);
+          this.y = random(height);
+          this.radius = 10;
+          this.speed = random(1, 3);
+        }
+        update() {
+          this.y += this.speed;
+          if (this.y > height) {
+            this.y = 0;
+            this.x = random(width);
+          }
+        }
+        display() {
+          noStroke();
+          ellipse(this.x, this.y, this.radius * 2);
+        }
+      }
+    </script>
+  </body>
+</html>
